@@ -47,6 +47,7 @@ def format_file(file)
 end
 
 def split_file(file_name)
+  Dir.mkdir('trim') unless Dir.exists?('trim')
   FileUtils.rm_rf(Dir.glob('trim/*'))
   trimmer = trim_file(file_name)
   reader = Reader.new(file_name)
@@ -55,54 +56,60 @@ def split_file(file_name)
   x = 0
   puts "splitting up the file to be processed..."
   while x <= int
-      start = x
-      finish = x + 30
-      filename = "trim/#{x / 30}.wav"
-      trimmer.trim start: start, finish: finish, output:File.expand_path(filename)
-      puts "#{ 1 + x / 30} out of #{ 1 + int / 30} completed."
-      x = x + 30
+    start = x
+    finish = x + 30
+    filename = "trim/#{x / 30}.wav"
+    trimmer.trim start: start, finish: finish, output:File.expand_path(filename)
+    puts "#{ 1 + x / 30} out of #{ 1 + int / 30} completed."
+    x = x + 30
   end
   puts "Done."
 end
 
 def recognize_audio(outputname)
-	if File.exist?("results/#{outputname.gsub(".mp4","") }-transcription.txt")
+  Dir.mkdir('results') unless Dir.exists?('results')
+	if File.exist?("results/#{outputname.gsub(/\..+/,"") }-transcription.txt")
     puts "Please look for your transcription in results."
     return
   end
   puts "Starting Transcription, this may take a few minutes:"
   transcription = ""
-  speech = Google::Cloud::Speech.new(credentials: "/home/guest/programming/google-api/speech-to-text-8f8480f5f830.json")
+
+  speech = Google::Cloud::Speech.speech(version: :v1)
   trims = Dir["trim/*"].sort_by { |s| s.gsub(".wav","").gsub("trim/","").to_i}
+  name = "#{outputname.gsub(/\..+/,"") }"
+  # Dir.mkdir(name)
+
   for x in trims
     audio_file = File.binread x
-    config = {sample_rate_hertz: 48000,
-              language_code:     "en-US"   }
+    config = { sample_rate_hertz:        48_000,
+      language_code:     "en-US"   }
+
     audio  = { content: audio_file }
-    file_path = "#{outputname.gsub(".m4a","") }/transcription-#{x.gsub(".m4a","").gsub("trim/","").to_i}.txt"
-    if Dir.exist?(file_path)
-      transcription = transcription.concat("#{File.open("file_path",'r').read}")
-    else
-      response = speech.recognize config, audio
-      results = response.results
-      unless results.first.nil?
-        results.first.alternatives.each do |alternatives|
-          File.open("#{outputname.gsub(".m4a","") }/transcription-#{x.gsub(".m4a","").gsub("trim/","").to_i}.txt", 'w') { |file| file.write(alternatives.transcript) }
+    response = speech.recognize(config: config, audio: audio)
+
+    results = response.results
+
+    unless results.first.nil?
+      results.each  do |r|
+        r.alternatives.each do |alternatives|
+          # File.open("#{name}/transcription-#{x.gsub(".wav","").gsub("trim/","").to_i}.txt", 'a') { |file| file.write(alternatives.transcript) }
           transcription = transcription.concat("#{alternatives.transcript} ")
         end
       end
-      puts "#{x.gsub(".m4a","").gsub("trim/","").to_i} out of #{trims.length} completed."
     end
+    puts "#{x.gsub(".wav","").gsub("trim/","").to_i} out of #{trims.length} completed."
   end
   puts "Success!"
   puts "writing file..."
-  File.open("results/#{outputname.gsub(".mp4","") }-transcription.txt", 'w') { |file| file.write(transcription) }
+  File.open("results/#{name}-transcription.txt", 'w') { |file| file.write(transcription) }
   puts "Please look for your transcription in results."
   transcription
 end
 
 def clean()
     FileUtils.rm_rf(Dir.glob('trim/*'))
+    FileUtils.rm_rf(Dir.glob('trim'))
     FileUtils.rm_rf('formatted.wav')
 end
 
@@ -114,5 +121,4 @@ def init(file_name)
 end
 
 init(get_file())
-
 
